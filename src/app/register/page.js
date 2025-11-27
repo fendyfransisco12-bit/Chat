@@ -3,29 +3,59 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { ref, set } from "firebase/database";
+import { auth, db } from "@/lib/firebase";
 
-export default function LoginPage() {
+export default function RegisterPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [show, setShow] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
-    setLoading(true);
 
+    // Validation
+    if (password !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters");
+      return;
+    }
+    if (!username.trim()) {
+      setError("Username is required");
+      return;
+    }
+
+    setLoading(true);
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      console.log("Signed in:", userCredential.user.email);
-      // Redirect to dashboard or home page
-      router.push("/dashboard");
+      // Create user in Firebase Auth
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      // Update profile with username
+      await updateProfile(user, { displayName: username });
+
+      // Save user data to Realtime Database
+      await set(ref(db, `users/${user.uid}`), {
+        email: email,
+        username: username,
+        createdAt: new Date().toISOString(),
+      });
+
+      // Redirect to login or dashboard
+      router.push("/login");
     } catch (err) {
-      setError(err.message || "Failed to sign in");
+      setError(err.message || "Failed to create account");
     } finally {
       setLoading(false);
     }
@@ -41,8 +71,8 @@ export default function LoginPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 21a7.5 7.5 0 0115 0" />
             </svg>
           </div>
-          <h1 className="text-2xl font-semibold text-gray-900">Selamat Datang</h1>
-          <p className="text-sm text-gray-700 mt-1">Silahkan login terlebih dahulu</p>
+          <h1 className="text-2xl font-semibold text-gray-900">Create Account</h1>
+          <p className="text-sm text-gray-700 mt-1">Join us today</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -51,6 +81,26 @@ export default function LoginPage() {
               {error}
             </div>
           )}
+
+          <div>
+            <label htmlFor="username" className="sr-only">Username</label>
+            <div className="relative">
+              <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path d="M10 10a4 4 0 100-8 4 4 0 000 8z" />
+                  <path fillRule="evenodd" d="M2 18a8 8 0 1116 0H2z" clipRule="evenodd" />
+                </svg>
+              </span>
+              <input
+                id="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="pl-10 pr-4 py-2 w-full rounded-lg border border-gray-200 bg-white text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                placeholder="Username"
+                required
+              />
+            </div>
+          </div>
 
           <div>
             <label htmlFor="email" className="sr-only">Email</label>
@@ -110,12 +160,41 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between">
-            <label className="inline-flex items-center text-sm text-gray-700">
-              <input type="checkbox" className="h-4 w-4 rounded text-indigo-600 border-gray-300" />
-              <span className="ml-2">Remember me</span>
-            </label>
-            <button type="button" className="text-sm text-indigo-600 hover:underline">Forgot?</button>
+          <div>
+            <label htmlFor="confirmPassword" className="sr-only">Confirm Password</label>
+            <div className="relative">
+              <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M5 8a5 5 0 1110 0v1h1a2 2 0 012 2v5a2 2 0 01-2 2H4a2 2 0 01-2-2v-5a2 2 0 012-2h1V8zm2 1V8a3 3 0 116 0v1H7z" clipRule="evenodd" />
+                </svg>
+              </span>
+              <input
+                id="confirmPassword"
+                type={showConfirm ? "text" : "password"}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="pl-10 pr-12 py-2 w-full rounded-lg border border-gray-200 bg-white text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                placeholder="Confirm password"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirm((s) => !s)}
+                className="absolute inset-y-0 right-0 pr-2 flex items-center text-sm text-indigo-600"
+                aria-label={showConfirm ? "Hide password" : "Show password"}
+              >
+                {showConfirm ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M13.875 12.825A3 3 0 108.175 7.125" />
+                    <path fillRule="evenodd" d="M3.28 3.28a.75.75 0 011.06 0l12.38 12.38a.75.75 0 11-1.06 1.06L3.28 4.34a.75.75 0 010-1.06z" clipRule="evenodd" />
+                  </svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M2.94 6.94C4.94 3.94 7.94 2 10 2s5.06 1.94 7.06 4.94a1.5 1.5 0 010 1.12C15.06 14.06 12.06 16 10 16s-5.06-1.94-7.06-4.94a1.5 1.5 0 010-1.12z" />
+                  </svg>
+                )}
+              </button>
+            </div>
           </div>
 
           <button
@@ -123,12 +202,12 @@ export default function LoginPage() {
             className="w-full py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 disabled:opacity-70"
             disabled={loading}
           >
-            {loading ? "Signing in..." : "Sign in"}
+            {loading ? "Creating account..." : "Sign up"}
           </button>
         </form>
 
         <div className="mt-5 text-center text-sm text-gray-700">
-          Don't have an account? <Link href="/register" className="text-indigo-600 hover:underline">Sign up</Link>
+          Already have an account? <Link href="/login" className="text-indigo-600 hover:underline">Sign in</Link>
         </div>
       </div>
     </div>
