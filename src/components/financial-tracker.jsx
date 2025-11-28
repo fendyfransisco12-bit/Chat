@@ -188,20 +188,20 @@ export default function FinancialTracker() {
               >
                 {type === "income" ? (
                   <>
-                    <option value="salary">Gaji</option>
-                    <option value="bonus">Bonus</option>
-                    <option value="freelance">Freelance</option>
-                    <option value="investment">Investasi</option>
-                    <option value="other">Lainnya</option>
+                    <option value="Gaji">Gaji</option>
+                    <option value="Bonus">Bonus</option>
+                    <option value="Freelance">Freelance</option>
+                    <option value="Investasi">Investasi</option>
+                    <option value="Lainnya">Lainnya</option>
                   </>
                 ) : (
                   <>
-                    <option value="food">Makanan</option>
-                    <option value="transport">Transfer</option>
-                    <option value="utilities">Top Up</option>
-                    <option value="entertainment">Hiburan</option>
-                    <option value="shopping">Belanja</option>
-                    <option value="other">Lainnya</option>
+                    <option value="Buy Baht">Buy Baht</option>
+                    <option value="Transfer">Transfer</option>
+                    <option value="Top Up">Top Up</option>
+                    <option value="Hiburan">Hiburan</option>
+                    <option value="Belanja">Belanja</option>
+                    <option value="Lainnya">Lainnya</option>
                   </>
                 )}
               </select>
