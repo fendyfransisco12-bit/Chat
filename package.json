@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "setup-cors": "powershell -ExecutionPolicy Bypass -File setup-cors.ps1"
   },
   "dependencies": {
     "firebase": "^11.0.0",
