@@ -287,6 +287,38 @@
   gap: 12px;
   overflow-y: auto;
   min-height: 200px;
+  max-height: 500px;
+  padding-right: 8px;
+}
+
+.transactionsList::-webkit-scrollbar {
+  width: 8px;
+}
+
+.transactionsList::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.transactionsList::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.transactionsList::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.darkMode .transactionsList::-webkit-scrollbar-track {
+  background: #4b5563;
+}
+
+.darkMode .transactionsList::-webkit-scrollbar-thumb {
+  background: #6b7684;
+}
+
+.darkMode .transactionsList::-webkit-scrollbar-thumb:hover {
+  background: #7a8a99;
 }
 
 .transactionItem {
