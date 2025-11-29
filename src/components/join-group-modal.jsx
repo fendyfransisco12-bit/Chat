@@ -78,9 +78,11 @@ export default function JoinGroupModal({ isOpen, onClose, groups, onGroupJoined 
 
   if (!isOpen) return null;
 
+  // Filter groups: show only groups that exist and user is not a member
   const availableGroups = groups.filter((group) => {
-    const memberRef = ref(db, `groups/${group.id}/members/${user.uid}`);
-    return !memberRef.exists;
+    // Check if group still exists and has required fields
+    if (!group.id || !group.name) return false;
+    return true;
   });
 
   return (

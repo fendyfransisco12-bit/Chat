@@ -5,7 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useNotification } from "@/context/NotificationContext";
 import { db } from "@/lib/firebase";
-import { ref, onValue, push, remove, update } from "firebase/database";
+import { ref, onValue, push, remove, update, get } from "firebase/database";
 import { sendNotification } from "@/lib/notifications";
 
 export default function GroupChat({ group, onBack }) {
@@ -18,6 +18,8 @@ export default function GroupChat({ group, onBack }) {
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [userStatuses, setUserStatuses] = useState({});
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [deleteGroupConfirm, setDeleteGroupConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const messagesContainerRef = useRef(null);
   const messageCountRef = useRef(0);
   const hasScrolledRef = useRef({}); // Track if already scrolled for each group
@@ -192,6 +194,49 @@ export default function GroupChat({ group, onBack }) {
     }
   };
 
+  // Delete group (only for admin/creator)
+  const handleDeleteGroup = async () => {
+    if (!user || !db || !group) return;
+    
+    // Double check if user is admin
+    const isAdmin = group.createdBy === user.uid;
+    if (!isAdmin) {
+      alert("Only group admin can delete this group");
+      console.warn("User is not admin. createdBy:", group.createdBy, "user.uid:", user.uid);
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      // Delete entire group including all nested data
+      const groupRef = ref(db, `groups/${group.id}`);
+      await remove(groupRef);
+      
+      // Double check deletion with a small delay
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // Try to verify deletion
+      try {
+        const checkRef = ref(db, `groups/${group.id}`);
+        const snapshot = await get(checkRef);
+        if (snapshot.exists()) {
+          console.warn("Group still exists after deletion attempt, retrying...");
+          await remove(groupRef);
+        }
+      } catch (checkErr) {
+        console.log("Verification check completed");
+      }
+      
+      setDeleteGroupConfirm(false);
+      // Go back to groups list after deletion
+      onBack();
+    } catch (error) {
+      console.error("Error deleting group:", error);
+      alert("Failed to delete group: " + error.message);
+      setIsDeleting(false);
+    }
+  };
+
   // Leave group
   const handleLeaveGroup = async () => {
     try {
@@ -244,12 +289,28 @@ export default function GroupChat({ group, onBack }) {
               </p>
             </div>
           </div>
-          <div className={`px-3 py-1 rounded-full text-xs font-semibold ${
-            group.type === "public"
-              ? "bg-blue-100 text-blue-800"
-              : "bg-purple-100 text-purple-800"
-          }`}>
-            {group.type === "public" ? "🌍 Public" : "🔒 Private"}
+          <div className="flex items-center gap-2">
+            <div className={`px-3 py-1 rounded-full text-xs font-semibold ${
+              group.type === "public"
+                ? "bg-blue-100 text-blue-800"
+                : "bg-purple-100 text-purple-800"
+            }`}>
+              {group.type === "public" ? "🌍 Public" : "🔒 Private"}
+            </div>
+            {/* Delete button - only for admin */}
+            {group.createdBy === user?.uid && (
+              <button
+                onClick={() => setDeleteGroupConfirm(true)}
+                className={`p-2 rounded-lg transition-colors ${
+                  isDark ? "hover:bg-gray-700 text-red-400" : "hover:bg-gray-100 text-red-600"
+                }`}
+                title="Delete group"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            )}
           </div>
         </div>
 
@@ -509,6 +570,47 @@ export default function GroupChat({ group, onBack }) {
                 className="flex-1 px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white font-medium transition-colors"
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Group Confirmation Modal */}
+      {deleteGroupConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className={`rounded-lg shadow-2xl p-6 max-w-sm w-full mx-4 ${isDark ? "bg-gray-800" : "bg-white"}`}>
+            <div className="flex items-center justify-center w-12 h-12 mx-auto bg-red-100 rounded-full mb-4">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4v2m0 5v.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h3 className={`text-lg font-semibold text-center mb-2 ${isDark ? "text-white" : "text-gray-900"}`}>
+              Delete Group?
+            </h3>
+            <p className={`text-center mb-6 ${isDark ? "text-gray-400" : "text-gray-600"}`}>
+              Are you sure you want to delete this group? All messages and data will be permanently deleted. This action cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteGroupConfirm(false)}
+                disabled={isDeleting}
+                className={`flex-1 px-4 py-2 rounded-lg transition-colors duration-200 font-medium ${
+                  isDark
+                    ? "bg-gray-700 hover:bg-gray-600 text-white"
+                    : "bg-gray-200 hover:bg-gray-300 text-gray-900"
+                } ${isDeleting ? "opacity-50 cursor-not-allowed" : ""}`}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteGroup}
+                disabled={isDeleting}
+                className={`flex-1 px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white font-medium transition-colors ${
+                  isDeleting ? "opacity-50 cursor-not-allowed" : ""
+                }`}
+              >
+                {isDeleting ? "Deleting..." : "Delete"}
               </button>
             </div>
           </div>

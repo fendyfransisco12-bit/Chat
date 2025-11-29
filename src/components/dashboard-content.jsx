@@ -256,17 +256,29 @@ export default function DashboardContent() {
       if (snapshot.exists()) {
         const data = snapshot.val();
         const groupsList = Object.entries(data)
+          .filter(([groupId, groupData]) => {
+            // Only include groups that have ALL required fields
+            // Reject groups dengan data incomplete/corrupted
+            if (!groupData) return false;
+            if (!groupData.name || groupData.name.trim() === "") return false;
+            if (!groupData.createdBy || groupData.createdBy.trim() === "") return false;
+            if (groupData.type !== "public" && groupData.type !== "private") return false;
+            if (groupData.createdAt === undefined || groupData.createdAt === null) return false;
+            return true;
+          })
           .map(([groupId, groupData]) => ({
             id: groupId,
             ...groupData,
           }))
           .sort((a, b) => b.createdAt - a.createdAt);
         setGroups(groupsList);
+      } else {
+        setGroups([]);
       }
     });
 
     return unsubscribe;
-  }, []);
+  }, [db]);
 
   // Fetch user's groups
   useEffect(() => {
@@ -279,6 +291,10 @@ export default function DashboardContent() {
         const myGroups = [];
         
         Object.entries(data).forEach(([groupId, groupData]) => {
+          // Filter: Only valid groups that user is member of
+          if (!groupData || !groupData.name || !groupData.createdBy) return;
+          if (groupData.type !== "public" && groupData.type !== "private") return;
+          
           const members = groupData.members;
           if (members && Object.keys(members).includes(user.uid)) {
             myGroups.push({
@@ -295,7 +311,7 @@ export default function DashboardContent() {
     });
 
     return unsubscribe;
-  }, [user]);
+  }, [user, db]);
 
   // Fetch messages for selected user
   useEffect(() => {
