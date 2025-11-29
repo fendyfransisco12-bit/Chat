@@ -56,12 +56,6 @@ export default function DashboardContent() {
     requestNotificationPermission();
   }, [user]);
 
-  // Update browser title with unread count
-  useEffect(() => {
-    const totalUnread = notification.getTotalUnread();
-    updateBrowserTitle(totalUnread, "Chat App");
-  }, [notification]);
-
   // Update user online status
   useEffect(() => {
     if (!user || !db) return;
