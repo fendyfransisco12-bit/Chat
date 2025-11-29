@@ -5,7 +5,7 @@ import { Lexend } from "next/font/google";
 const lexend = Lexend({ subsets: ["latin"] });
 
 export const metadata = {
-  title: "Chat App",
+  title: "DashBoard Cungkok",
   description: "Real-time chat application",
 };
 
