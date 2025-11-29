@@ -124,26 +124,18 @@ export default function GroupChat({ group, onBack }) {
     return unsubscribe;
   }, [db]);
 
-  // Scroll to latest message on first load ONLY (instant, no smooth scroll)
+  // Scroll to latest message (instant, no smooth scroll)
   useEffect(() => {
-    if (!messagesContainerRef.current || !group) return;
+    if (!messagesContainerRef.current || messages.length === 0 || !group) return;
     
-    // Only scroll if we haven't scrolled to this group yet
-    if (hasScrolledRef.current[group.id]) return;
-
-    // Only scroll to bottom if messages were just loaded for the first time
-    if (messages.length > 0 && messageCountRef.current === 0) {
-      // Mark as scrolled
-      hasScrolledRef.current[group.id] = true;
-
-      // Small delay to ensure DOM is ready
-      setTimeout(() => {
-        if (messagesContainerRef.current) {
-          messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
-        }
-      }, 50);
-    }
-  }, [group, messages]);
+    // Langsung scroll ke bawah tanpa check hasScrolled
+    // Gunakan setTimeout 0 untuk memastikan DOM sudah updated
+    setTimeout(() => {
+      if (messagesContainerRef.current) {
+        messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+      }
+    }, 0);
+  }, [group?.id, messages.length]);
 
   // Detect scroll position to show/hide scroll down button
   const handleScroll = () => {
