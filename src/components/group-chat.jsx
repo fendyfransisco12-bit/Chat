@@ -17,6 +17,7 @@ export default function GroupChat({ group, onBack }) {
   const [members, setMembers] = useState([]);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [userStatuses, setUserStatuses] = useState({});
+  const [showScrollButton, setShowScrollButton] = useState(false);
   const messagesContainerRef = useRef(null);
   const messageCountRef = useRef(0);
   const hasScrolledRef = useRef({}); // Track if already scrolled for each group
@@ -105,21 +106,40 @@ export default function GroupChat({ group, onBack }) {
 
   // Scroll to latest message on first load ONLY (instant, no smooth scroll)
   useEffect(() => {
-    if (!messagesContainerRef.current || !selectedGroup) return;
+    if (!messagesContainerRef.current || !group) return;
     
     // Only scroll if we haven't scrolled to this group yet
-    if (hasScrolledRef.current[selectedGroup.id]) return;
+    if (hasScrolledRef.current[group.id]) return;
 
-    // Mark as scrolled
-    hasScrolledRef.current[selectedGroup.id] = true;
+    // Only scroll to bottom if messages were just loaded for the first time
+    if (messages.length > 0 && messageCountRef.current === 0) {
+      // Mark as scrolled
+      hasScrolledRef.current[group.id] = true;
 
-    // Small delay to ensure DOM is ready
-    setTimeout(() => {
-      if (messagesContainerRef.current) {
-        messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
-      }
-    }, 50);
-  }, [selectedGroup]);
+      // Small delay to ensure DOM is ready
+      setTimeout(() => {
+        if (messagesContainerRef.current) {
+          messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+        }
+      }, 50);
+    }
+  }, [group, messages]);
+
+  // Detect scroll position to show/hide scroll down button
+  const handleScroll = () => {
+    if (!messagesContainerRef.current) return;
+    const container = messagesContainerRef.current;
+    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+    setShowScrollButton(!isNearBottom);
+  };
+
+  // Jump ke bawah saat tombol arrow diklik
+  const handleScrollToBottom = () => {
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+      setShowScrollButton(false);
+    }
+  };
 
   // Send group message
   const handleSendMessage = async (e) => {
@@ -139,6 +159,11 @@ export default function GroupChat({ group, onBack }) {
       });
 
       setMessageText("");
+
+      // Loncat ke bawah langsung (instant, tidak pakai scroll animation)
+      if (messagesContainerRef.current) {
+        messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+      }
     } catch (error) {
       console.error("Error sending message:", error);
     }
@@ -219,6 +244,7 @@ export default function GroupChat({ group, onBack }) {
         {/* Messages */}
         <div 
           ref={messagesContainerRef}
+          onScroll={handleScroll}
           className={`flex-1 overflow-y-auto p-4 space-y-4 ${isDark ? "bg-gray-800" : "bg-white"}`}
         >
           {messages.length === 0 ? (
@@ -306,6 +332,26 @@ export default function GroupChat({ group, onBack }) {
                 </div>
               ))}
             </>
+          )}
+
+          {/* Scroll to Bottom Button */}
+          {showScrollButton && (
+            <button
+              onClick={handleScrollToBottom}
+              className={`fixed bottom-24 left-[43%] -translate-x-1/2 px-6 py-3 rounded-full shadow-lg transition-all duration-300 hover:scale-105 z-40 ${
+                isDark 
+                  ? "bg-blue-600 hover:bg-blue-700 text-white" 
+                  : "bg-blue-500 hover:bg-blue-600 text-white"
+              }`}
+              title="Jump to latest messages"
+            >
+              <div className="flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                </svg>
+                <span className="font-medium">New Messages</span>
+              </div>
+            </button>
           )}
         </div>
 
