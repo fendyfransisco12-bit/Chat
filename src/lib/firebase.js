@@ -19,32 +19,35 @@ const firebaseConfig = {
   databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
+// Initialize Firebase (only on client side)
+let app, auth, db, storage;
 
-// Auth
-const auth = getAuth(app);
-setPersistence(auth, browserLocalPersistence);
+if (typeof window !== "undefined") {
+  app = initializeApp(firebaseConfig);
 
-// Realtime Database - only initialize if URL is provided
-let db = null;
-if (process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL) {
-  db = getDatabase(app);
-} else {
-  console.warn("Firebase Realtime Database URL not configured. Skipping database initialization.");
+  // Auth
+  auth = getAuth(app);
+  setPersistence(auth, browserLocalPersistence);
+
+  // Realtime Database - only initialize if URL is provided
+  if (process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL) {
+    db = getDatabase(app);
+  } else {
+    console.warn("Firebase Realtime Database URL not configured. Skipping database initialization.");
+  }
+
+  // Firebase Storage
+  storage = getStorage(app);
+
+  // Optional: Use emulator for local testing (comment out for production)
+  // if (process.env.NODE_ENV === "development") {
+  //   try {
+  //     connectAuthEmulator(auth, "http://localhost:9099", { disableWarnings: true });
+  //     connectDatabaseEmulator(db, "localhost", 9000);
+  //   } catch (error) {
+  //     // ignore - emulator already running
+  //   }
+  // }
 }
-
-// Firebase Storage
-const storage = getStorage(app);
-
-// Optional: Use emulator for local testing (comment out for production)
-// if (process.env.NODE_ENV === "development") {
-//   try {
-//     connectAuthEmulator(auth, "http://localhost:9099", { disableWarnings: true });
-//     connectDatabaseEmulator(db, "localhost", 9000);
-//   } catch (error) {
-//     // ignore - emulator already running
-//   }
-// }
 
 export { auth, db, app, storage };
