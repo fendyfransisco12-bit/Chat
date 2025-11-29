@@ -344,18 +344,18 @@ export default function DashboardContent() {
   // Loncat ke bawah saat pertama kali buka chat (instant jump)
   useEffect(() => {
     if (!messagesContainerRef.current || messages.length === 0) return;
+    
     const chatId = selectedUser ? [user.uid, selectedUser.uid].sort().join("_") : null;
     if (!chatId) return;
 
-    const previousCount = previousMessageCountRef.current[chatId] || 0;
-    
-    // Hanya loncat saat pertama kali buka chat (previousCount === 0)
-    if (previousCount === 0 && messages.length > 0) {
-      // Instant jump ke bawah, tanpa delay
-      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
-      previousMessageCountRef.current[chatId] = messages.length;
-    }
-  }, [selectedUser]);
+    // Langsung scroll ke bawah tanpa check previousCount
+    // Gunakan nextTick atau setTimeout 0 untuk memastikan DOM sudah updated
+    setTimeout(() => {
+      if (messagesContainerRef.current) {
+        messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+      }
+    }, 0);
+  }, [selectedUser, messages.length]);
 
   const showToast = (message, type = "success") => {
     setToast({ message, type });
