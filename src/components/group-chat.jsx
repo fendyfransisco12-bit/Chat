@@ -35,6 +35,7 @@ export default function GroupChat({ group, onBack }) {
     
     // Reset scroll tracking ketika user switch group
     hasScrolledRef.current = false;
+    let isFirstLoad = true;
     
     const unsubscribe = onValue(messagesRef, (snapshot) => {
       if (snapshot.exists()) {
@@ -46,10 +47,29 @@ export default function GroupChat({ group, onBack }) {
           }))
           .sort((a, b) => a.timestamp - b.timestamp);
         
-        // Clear unread for this group when viewing it
-        notification.clearUnreadGroup(group.id);
-        messageCountRef.current = messagesList.length;
+        const newMessageCount = messagesList.length;
         
+        // Clear unread HANYA saat first load
+        if (isFirstLoad) {
+          notification.clearUnreadGroup(group.id);
+          isFirstLoad = false;
+        }
+        
+        // Jika ada message baru (newMessageCount > oldMessageCount) SETELAH first load
+        if (newMessageCount > messageCountRef.current && !isFirstLoad) {
+          const lastMessage = messagesList[messagesList.length - 1];
+          
+          // Cek apakah message dari user lain
+          if (lastMessage.senderId !== user.uid) {
+            // Trigger browser notification
+            sendNotification(`New message in ${group.name}`, {
+              body: lastMessage.text?.substring(0, 50) || "📸 Image sent",
+              tag: `group-${group.id}`,
+            });
+          }
+        }
+        
+        messageCountRef.current = newMessageCount;
         setMessages(messagesList);
       } else {
         setMessages([]);
@@ -58,7 +78,7 @@ export default function GroupChat({ group, onBack }) {
     });
 
     return unsubscribe;
-  }, [group, notification]);
+  }, [group, user, notification]);
 
   // Fetch group members
   useEffect(() => {

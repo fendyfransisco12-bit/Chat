@@ -47,6 +47,7 @@ export default function DashboardContent() {
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const messageCountRef = useRef({});
+  const groupMessageCountRef = useRef({});
   const hasScrolledRef = useRef({});
   const previousMessageCountRef = useRef({});
 
@@ -118,16 +119,24 @@ export default function DashboardContent() {
           const newMessageCount = Object.keys(data).length;
           const oldMessageCount = messageCountRef.current[chatId] || 0;
         
+          // Hanya trigger jika ada message baru
+          if (newMessageCount > oldMessageCount) {
             const lastMessage = Object.entries(data)[Object.entries(data).length - 1];
             if (lastMessage) {
               const [, msgData] = lastMessage;
-              if (msgData.senderId !== user.uid) {
+              // Jika message dari orang lain dan user TIDAK sedang membaca chat ini
+              if (msgData.senderId !== user.uid && selectedUser?.uid !== otherUser.uid) {
+                // Trigger badge notification (hanya 1x)
+                notification.addUnreadMessage(chatId);
+                
+                // Trigger browser notification (hanya 1x)
                 sendNotification(`New message from ${otherUser.username}`, {
                   body: msgData.text?.substring(0, 50) || "📸 Image sent",
                   tag: chatId,
                 });
               }
             }
+          }
 
           messageCountRef.current[chatId] = newMessageCount;
         }
@@ -145,24 +154,26 @@ export default function DashboardContent() {
 
     const unsubscribers = userGroups.map((group) => {
       const messagesRef = ref(db, `groups/${group.id}/messages`);
-      let messageCountRef_group = 0;
 
       return onValue(messagesRef, (snapshot) => {
         if (snapshot.exists()) {
           const data = snapshot.val();
           const newMessageCount = Object.keys(data).length;
+          const oldMessageCount = groupMessageCountRef.current[group.id] || 0;
 
-          if (newMessageCount > messageCountRef_group && selectedGroup?.id !== group.id) {
-            const newMessagesCount = newMessageCount - messageCountRef_group;
-            
-            for (let i = 0; i < newMessagesCount; i++) {
-              notification.addUnreadGroup(group.id);
-            }
-
+          // Jika user sedang membuka grup ini, clear unread
+          if (selectedGroup?.id === group.id) {
+            notification.clearUnreadGroup(group.id);
+          } else if (newMessageCount > oldMessageCount) {
+            // Hanya trigger jika ada message baru dan user TIDAK sedang membaca grup ini
             const lastMessage = Object.entries(data)[Object.entries(data).length - 1];
             if (lastMessage) {
               const [, msgData] = lastMessage;
               if (msgData.senderId !== user.uid) {
+                // Trigger badge notification (hanya 1x)
+                notification.addUnreadGroup(group.id);
+                
+                // Trigger browser notification (hanya 1x)
                 sendNotification(`New message in ${group.name}`, {
                   body: msgData.text?.substring(0, 50) || "📸 Image sent",
                   tag: `group-${group.id}`,
@@ -171,7 +182,7 @@ export default function DashboardContent() {
             }
           }
 
-          messageCountRef_group = newMessageCount;
+          groupMessageCountRef.current[group.id] = newMessageCount;
         }
       });
     });

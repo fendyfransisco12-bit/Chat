@@ -1,6 +1,8 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback } from "react";
+import { createContext, useContext, useState, useCallback, useEffect } from "react";
+import { db, auth } from "@/lib/firebase";
+import { ref, update, onValue } from "firebase/database";
 
 const NotificationContext = createContext();
 
@@ -9,12 +11,20 @@ export function NotificationProvider({ children }) {
   const [unreadMessages, setUnreadMessages] = useState({});
   // unreadGroups: { "groupId": count }
   const [unreadGroups, setUnreadGroups] = useState({});
+  const [readChats, setReadChats] = useState({});
+  const [readGroups, setReadGroups] = useState({});
 
   const addUnreadMessage = useCallback((chatId) => {
-    setUnreadMessages((prev) => ({
-      ...prev,
-      [chatId]: (prev[chatId] || 0) + 1,
-    }));
+    // Jangan add jika sudah ada di unreadMessages
+    setUnreadMessages((prev) => {
+      // Cek di unreadMessages, bukan readChats (untuk timing issue)
+      if (prev[chatId]) return prev;
+      
+      return {
+        ...prev,
+        [chatId]: 1,
+      };
+    });
   }, []);
 
   const clearUnreadMessages = useCallback((chatId) => {
@@ -23,21 +33,44 @@ export function NotificationProvider({ children }) {
       delete newState[chatId];
       return newState;
     });
+
+    // Save to database
+    if (auth.currentUser && db) {
+      const userRef = ref(db, `users/${auth.currentUser.uid}/readChats/${chatId}`);
+      update(userRef, {
+        readAt: Date.now(),
+      }).catch(console.error);
+    }
   }, []);
 
   const addUnreadGroup = useCallback((groupId) => {
-    setUnreadGroups((prev) => ({
-      ...prev,
-      [groupId]: (prev[groupId] || 0) + 1,
-    }));
+    // Jangan add jika sudah ada di unreadGroups
+    setUnreadGroups((prev) => {
+      // Cek di unreadGroups, bukan readGroups (untuk timing issue)
+      if (prev[groupId]) return prev;
+      
+      return {
+        ...prev,
+        [groupId]: 1,
+      };
+    });
   }, []);
 
   const clearUnreadGroup = useCallback((groupId) => {
+    // Delete from local unreadGroups immediately
     setUnreadGroups((prev) => {
       const newState = { ...prev };
       delete newState[groupId];
       return newState;
     });
+
+    // Save to database
+    if (auth.currentUser && db) {
+      const userRef = ref(db, `users/${auth.currentUser.uid}/readGroups/${groupId}`);
+      update(userRef, {
+        readAt: Date.now(),
+      }).catch(console.error);
+    }
   }, []);
 
   // Get total unread count
@@ -47,9 +80,47 @@ export function NotificationProvider({ children }) {
     return messageCount + groupCount;
   }, [unreadMessages, unreadGroups]);
 
+  // Load read status dari database saat app start
+  useEffect(() => {
+    if (!auth.currentUser || !db) return;
+
+    // Load read chats
+    const readChatsRef = ref(db, `users/${auth.currentUser.uid}/readChats`);
+    const unsubscribeChats = onValue(readChatsRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        setReadChats(data);
+      } else {
+        setReadChats({});
+      }
+    }, (error) => {
+      console.error("Error loading read chats:", error);
+    });
+
+    // Load read groups
+    const readGroupsRef = ref(db, `users/${auth.currentUser.uid}/readGroups`);
+    const unsubscribeGroups = onValue(readGroupsRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        setReadGroups(data);
+      } else {
+        setReadGroups({});
+      }
+    }, (error) => {
+      console.error("Error loading read groups:", error);
+    });
+
+    return () => {
+      unsubscribeChats();
+      unsubscribeGroups();
+    };
+  }, [auth.currentUser]);
+
   const value = {
     unreadMessages,
     unreadGroups,
+    readChats,
+    readGroups,
     addUnreadMessage,
     clearUnreadMessages,
     addUnreadGroup,
