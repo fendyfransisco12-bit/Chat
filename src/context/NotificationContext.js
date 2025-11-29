@@ -13,6 +13,11 @@ export function NotificationProvider({ children }) {
   const [unreadGroups, setUnreadGroups] = useState({});
   const [readChats, setReadChats] = useState({});
   const [readGroups, setReadGroups] = useState({});
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const addUnreadMessage = useCallback((chatId) => {
     // Jangan add jika sudah ada di unreadMessages
@@ -34,14 +39,14 @@ export function NotificationProvider({ children }) {
       return newState;
     });
 
-    // Save to database
-    if (auth.currentUser && db) {
+    // Save to database (only on client)
+    if (mounted && auth?.currentUser && db) {
       const userRef = ref(db, `users/${auth.currentUser.uid}/readChats/${chatId}`);
       update(userRef, {
         readAt: Date.now(),
       }).catch(console.error);
     }
-  }, []);
+  }, [mounted]);
 
   const addUnreadGroup = useCallback((groupId) => {
     // Jangan add jika sudah ada di unreadGroups
@@ -64,14 +69,14 @@ export function NotificationProvider({ children }) {
       return newState;
     });
 
-    // Save to database
-    if (auth.currentUser && db) {
+    // Save to database (only on client)
+    if (mounted && auth?.currentUser && db) {
       const userRef = ref(db, `users/${auth.currentUser.uid}/readGroups/${groupId}`);
       update(userRef, {
         readAt: Date.now(),
       }).catch(console.error);
     }
-  }, []);
+  }, [mounted]);
 
   // Get total unread count
   const getTotalUnread = useCallback(() => {
@@ -82,7 +87,7 @@ export function NotificationProvider({ children }) {
 
   // Load read status dari database saat app start
   useEffect(() => {
-    if (!auth.currentUser || !db) return;
+    if (!mounted || !auth?.currentUser || !db) return;
 
     // Load read chats
     const readChatsRef = ref(db, `users/${auth.currentUser.uid}/readChats`);
@@ -114,7 +119,7 @@ export function NotificationProvider({ children }) {
       unsubscribeChats();
       unsubscribeGroups();
     };
-  }, [auth.currentUser]);
+  }, [mounted, auth?.currentUser, db]);
 
   const value = {
     unreadMessages,
