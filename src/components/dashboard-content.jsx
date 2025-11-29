@@ -7,7 +7,7 @@ import { useTheme } from "@/context/ThemeContext";
 import { useNotification } from "@/context/NotificationContext";
 import { signOut } from "firebase/auth";
 import { auth, db, storage } from "@/lib/firebase";
-import { ref, onValue, push, remove } from "firebase/database";
+import { ref, onValue, push, remove, update } from "firebase/database";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import {
   requestNotificationPermission,
@@ -41,10 +41,13 @@ export default function DashboardContent() {
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [showJoinGroup, setShowJoinGroup] = useState(false);
   const [userGroups, setUserGroups] = useState([]);
-  const [chatTab, setChatTab] = useState("personal"); // "personal" or "groups"
+  const [chatTab, setChatTab] = useState("personal");
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
-  const messageCountRef = useRef({}); // Track message counts per chat
+  const messagesContainerRef = useRef(null);
+  const messageCountRef = useRef({});
+  const hasScrolledRef = useRef({});
+  const previousMessageCountRef = useRef({});
 
   // Request notification permission and update browser title
   useEffect(() => {
@@ -63,25 +66,29 @@ export default function DashboardContent() {
   useEffect(() => {
     if (!user || !db) return;
 
-    // Set user online
-    const userStatusRef = ref(db, `status/${user.uid}`);
-    push(userStatusRef, {
-      status: "online",
-      timestamp: Date.now(),
+    const userStatusRef = ref(db, `userStatus/${user.uid}`);
+    const userRef = ref(db, `users/${user.uid}`);
+    
+    update(userRef, {
+      lastSeen: Date.now(),
+      isOnline: true,
     }).catch(console.error);
 
-    // Handle user going offline
     const handleBeforeUnload = async () => {
-      const userStatusRef = ref(db, `status/${user.uid}`);
-      push(userStatusRef, {
-        status: "offline",
-        timestamp: Date.now(),
-      }).catch(console.error);
+      try {
+        const userRef = ref(db, `users/${user.uid}`);
+        update(userRef, {
+          lastSeen: Date.now(),
+          isOnline: false,
+        });
+      } catch (error) {
+        console.error("Error updating offline status:", error);
+      }
     };
 
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [user]);
+  }, [user, db]);
 
   // Fetch all users
   useEffect(() => {
@@ -115,17 +122,7 @@ export default function DashboardContent() {
           const data = snapshot.val();
           const newMessageCount = Object.keys(data).length;
           const oldMessageCount = messageCountRef.current[chatId] || 0;
-
-          // If new messages arrived and this chat is NOT selected
-          if (newMessageCount > oldMessageCount && selectedUser?.uid !== otherUser.uid) {
-            const newMessagesCount = newMessageCount - oldMessageCount;
-            
-            // Add unread notifications
-            for (let i = 0; i < newMessagesCount; i++) {
-              notification.addUnreadMessage(chatId);
-            }
-
-            // Send browser notification
+        
             const lastMessage = Object.entries(data)[Object.entries(data).length - 1];
             if (lastMessage) {
               const [, msgData] = lastMessage;
@@ -136,7 +133,6 @@ export default function DashboardContent() {
                 });
               }
             }
-          }
 
           messageCountRef.current[chatId] = newMessageCount;
         }
@@ -161,16 +157,13 @@ export default function DashboardContent() {
           const data = snapshot.val();
           const newMessageCount = Object.keys(data).length;
 
-          // If new messages arrived and this group is NOT selected
           if (newMessageCount > messageCountRef_group && selectedGroup?.id !== group.id) {
             const newMessagesCount = newMessageCount - messageCountRef_group;
             
-            // Add unread notifications
             for (let i = 0; i < newMessagesCount; i++) {
               notification.addUnreadGroup(group.id);
             }
 
-            // Send browser notification
             const lastMessage = Object.entries(data)[Object.entries(data).length - 1];
             if (lastMessage) {
               const [, msgData] = lastMessage;
@@ -193,28 +186,28 @@ export default function DashboardContent() {
     };
   }, [user, userGroups, selectedGroup, notification, db]);
 
+  // Fetch user online statuses
   useEffect(() => {
     if (!db) return;
 
-    const statusRef = ref(db, "status");
-    const unsubscribe = onValue(statusRef, (snapshot) => {
+    const usersRef = ref(db, "users");
+    const unsubscribe = onValue(usersRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.val();
         const statuses = {};
-        Object.entries(data).forEach(([uid, statusData]) => {
-          if (Array.isArray(statusData)) {
-            const latestStatus = statusData[statusData.length - 1];
-            statuses[uid] = latestStatus;
-          } else {
-            statuses[uid] = statusData;
-          }
+        Object.entries(data).forEach(([uid, userData]) => {
+          statuses[uid] = {
+            status: userData.isOnline ? "online" : "offline",
+            lastSeen: userData.lastSeen,
+            isOnline: userData.isOnline || false,
+          };
         });
         setUserStatuses(statuses);
       }
     });
 
     return unsubscribe;
-  }, []);
+  }, [db]);
 
   // Fetch all groups
   useEffect(() => {
@@ -249,7 +242,6 @@ export default function DashboardContent() {
         
         Object.entries(data).forEach(([groupId, groupData]) => {
           const members = groupData.members;
-          // Check if user is a member of this group (members keyed by uid)
           if (members && Object.keys(members).includes(user.uid)) {
             myGroups.push({
               id: groupId,
@@ -274,7 +266,16 @@ export default function DashboardContent() {
     const chatId = [user.uid, selectedUser.uid].sort().join("_");
     const messagesRef = ref(db, `messages/${chatId}`);
     
+    hasScrolledRef.current[chatId] = false;
+    previousMessageCountRef.current[chatId] = 0;
+    
     const unsubscribe = onValue(messagesRef, (snapshot) => {
+      const container = messagesContainerRef.current;
+      if (!container) return;
+
+      // Simpan posisi scroll sebelum update
+      const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+      
       if (snapshot.exists()) {
         const data = snapshot.val();
         const messagesList = Object.entries(data)
@@ -284,32 +285,91 @@ export default function DashboardContent() {
           }))
           .sort((a, b) => a.timestamp - b.timestamp);
         
-        // Clear unread when viewing this chat
         notification.clearUnreadMessages(chatId);
+        
+        const previousCount = previousMessageCountRef.current[chatId] || 0;
+        const isFirstLoad = !hasScrolledRef.current[chatId];
+        const hasNewMessage = messagesList.length > previousCount;
+        
         messageCountRef.current[chatId] = messagesList.length;
+        previousMessageCountRef.current[chatId] = messagesList.length;
         
         setMessages(messagesList);
+
+        // Scroll logic: hanya jika first load ATAU (ada pesan baru DAN user di bottom)
+        if (isFirstLoad || (hasNewMessage && wasAtBottom)) {
+          hasScrolledRef.current[chatId] = true;
+          setTimeout(() => {
+            container.scrollTop = container.scrollHeight;
+          }, 50);
+        }
       } else {
         setMessages([]);
         messageCountRef.current[chatId] = 0;
+        previousMessageCountRef.current[chatId] = 0;
       }
     });
 
     return unsubscribe;
   }, [selectedUser, user, notification]);
 
-  // Auto-scroll to latest message
+  // Reset scroll flag when changing chat
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    if (!selectedUser || !user) return;
+    const chatId = [user.uid, selectedUser.uid].sort().join("_");
+    hasScrolledRef.current[chatId] = false;
+    previousMessageCountRef.current[chatId] = 0;
+  }, [selectedUser, user]);
 
-  // Toast notification
+  // Auto-scroll HANYA untuk pesan baru DAN user di bottom
+  useEffect(() => {
+    if (!messagesContainerRef.current || messages.length === 0) return;
+    const chatId = selectedUser ? [user.uid, selectedUser.uid].sort().join("_") : null;
+    if (!chatId) return;
+
+    const container = messagesContainerRef.current;
+    const previousCount = previousMessageCountRef.current[chatId] || 0;
+    const currentCount = messages.length;
+
+    // First time opening chat - langsung scroll
+    if (!hasScrolledRef.current[chatId]) {
+      hasScrolledRef.current[chatId] = true;
+      previousMessageCountRef.current[chatId] = currentCount;
+      requestAnimationFrame(() => {
+        container.scrollTop = container.scrollHeight;
+      });
+      return;
+    }
+
+    // CEK: Apakah ada pesan BARU?
+    const hasNewMessage = currentCount > previousCount;
+    
+    if (hasNewMessage) {
+      // Ada pesan baru, CEK posisi scroll
+      const scrollHeight = container.scrollHeight;
+      const scrollTop = container.scrollTop;
+      const clientHeight = container.clientHeight;
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+      
+      // HANYA auto-scroll jika user di bottom (dalam 100px)
+      if (distanceFromBottom <= 100) {
+        requestAnimationFrame(() => {
+          container.scrollTop = container.scrollHeight;
+        });
+      }
+      // Jika user TIDAK di bottom, biarkan saja
+      
+      // Update previous count
+      previousMessageCountRef.current[chatId] = currentCount;
+    }
+    
+  }, [messages, selectedUser, user]);
+
   const showToast = (message, type = "success") => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
   };
 
-  // Handle logout
   async function handleLogout() {
     try {
       await signOut(auth);
@@ -319,7 +379,6 @@ export default function DashboardContent() {
     }
   }
 
-  // Send message
   const handleSendMessage = async (e) => {
     e.preventDefault();
 
@@ -345,7 +404,6 @@ export default function DashboardContent() {
     }
   };
 
-  // Upload image
   const handleImageUpload = async (e) => {
     const file = e.target.files?.[0];
     
@@ -409,7 +467,6 @@ export default function DashboardContent() {
     }
   };
 
-  // Delete message
   const handleDeleteMessage = async (messageId) => {
     try {
       const chatId = [user.uid, selectedUser.uid].sort().join("_");
@@ -634,7 +691,6 @@ export default function DashboardContent() {
                   {/* Users or Groups List */}
                   <div className={`flex-1 overflow-y-auto transition-colors duration-300 ${isDark ? "bg-gray-800" : "bg-white"}`}>
                     {chatTab === "personal" ? (
-                      // Personal Chats
                       loadingUsers ? (
                         <div className={`p-4 text-center ${isDark ? "text-gray-400" : "text-gray-500"}`}>Loading contacts...</div>
                       ) : users.length === 0 ? (
@@ -659,7 +715,7 @@ export default function DashboardContent() {
                                 {u.username?.charAt(0).toUpperCase() || "U"}
                               </div>
                               <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 ${
-                                userStatuses[u.uid]?.status === "online" 
+                                userStatuses[u.uid]?.isOnline
                                   ? "bg-green-500 border-white" 
                                   : "bg-gray-400 border-white"
                               }`} />
@@ -667,7 +723,7 @@ export default function DashboardContent() {
                             <div className="flex-1 min-w-0">
                               <p className={`font-medium truncate ${isDark ? "text-white" : "text-black"}`}>{u.username}</p>
                               <p className={`text-xs truncate ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                                {userStatuses[u.uid]?.status === "online" ? "🟢 Online" : "🔴 Offline"}
+                                {userStatuses[u.uid]?.isOnline ? "🟢 Online" : "🔴 Offline"}
                               </p>
                             </div>
                             {notification.unreadMessages[[user.uid, u.uid].sort().join("_")] > 0 && (
@@ -681,7 +737,6 @@ export default function DashboardContent() {
                         ))
                       )
                     ) : (
-                      // Groups
                       userGroups.length === 0 ? (
                         <div className={`p-4 text-center ${isDark ? "text-gray-400" : "text-gray-500"}`}>
                           <div className="text-3xl mb-2">👥</div>
@@ -693,8 +748,8 @@ export default function DashboardContent() {
                             key={group.id}
                             onClick={() => {
                               console.log("Group clicked:", group);
-                              setSelectedUser(null);  // Clear selected user
-                              setSelectedGroup(group);  // Set selected group
+                              setSelectedUser(null);
+                              setSelectedGroup(group);
                             }}
                             className={`w-full p-3 text-left transition border-b flex items-center gap-3 ${
                               isDark
@@ -743,7 +798,7 @@ export default function DashboardContent() {
                               {selectedUser.username?.charAt(0).toUpperCase() || "U"}
                             </div>
                             <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 ${
-                              userStatuses[selectedUser.uid]?.status === "online" 
+                              userStatuses[selectedUser.uid]?.isOnline
                                 ? "bg-green-500 border-white" 
                                 : "bg-gray-400 border-white"
                             }`} />
@@ -751,14 +806,17 @@ export default function DashboardContent() {
                           <div>
                             <p className={`font-medium ${isDark ? "text-white" : "text-black"}`}>{selectedUser.username}</p>
                             <p className={`text-sm ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                              {userStatuses[selectedUser.uid]?.status === "online" ? "🟢 Online" : "🔴 Offline"}
+                              {userStatuses[selectedUser.uid]?.isOnline ? "🟢 Online" : "🔴 Offline"}
                             </p>
                           </div>
                         </div>
                       </div>
 
                       {/* Messages */}
-                      <div className={`flex-1 overflow-y-auto p-4 space-y-4 transition-colors duration-300 ${isDark ? "bg-gray-800" : "bg-white"}`}>
+                      <div 
+                        ref={messagesContainerRef}
+                        className={`flex-1 overflow-y-auto p-4 space-y-4 transition-colors duration-300 ${isDark ? "bg-gray-800" : "bg-white"}`}
+                      >
                         {messages.length === 0 ? (
                           <div className={`flex items-center justify-center h-full ${isDark ? "text-gray-400" : "text-gray-500"}`}>
                             <div className="text-center">
@@ -906,7 +964,7 @@ export default function DashboardContent() {
         onClose={() => setShowCreateGroup(false)}
         onGroupCreated={() => {
           setShowCreateGroup(false);
-          setChatTab("groups"); // Switch to groups tab automatically
+          setChatTab("groups");
         }}
       />
 

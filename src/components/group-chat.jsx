@@ -17,8 +17,9 @@ export default function GroupChat({ group, onBack }) {
   const [members, setMembers] = useState([]);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [userStatuses, setUserStatuses] = useState({});
-  const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
   const messageCountRef = useRef(0);
+  const hasScrolledRef = useRef({}); // Track if already scrolled for each group
 
   // Debug logging
   useEffect(() => {
@@ -30,6 +31,10 @@ export default function GroupChat({ group, onBack }) {
     if (!group || !db) return;
 
     const messagesRef = ref(db, `groups/${group.id}/messages`);
+    
+    // Reset scroll tracking ketika user switch group
+    hasScrolledRef.current = false;
+    
     const unsubscribe = onValue(messagesRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.val();
@@ -79,30 +84,42 @@ export default function GroupChat({ group, onBack }) {
   useEffect(() => {
     if (!db) return;
 
-    const statusRef = ref(db, "status");
-    const unsubscribe = onValue(statusRef, (snapshot) => {
+    const usersRef = ref(db, "users");
+    const unsubscribe = onValue(usersRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.val();
         const statuses = {};
-        Object.entries(data).forEach(([uid, statusData]) => {
-          if (Array.isArray(statusData)) {
-            const latestStatus = statusData[statusData.length - 1];
-            statuses[uid] = latestStatus;
-          } else {
-            statuses[uid] = statusData;
-          }
+        Object.entries(data).forEach(([uid, userData]) => {
+          statuses[uid] = {
+            status: userData.isOnline ? "online" : "offline",
+            lastSeen: userData.lastSeen,
+            isOnline: userData.isOnline || false,
+          };
         });
         setUserStatuses(statuses);
       }
     });
 
     return unsubscribe;
-  }, []);
+  }, [db]);
 
-  // Auto-scroll to latest message
+  // Scroll to latest message on first load ONLY (instant, no smooth scroll)
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    if (!messagesContainerRef.current || !selectedGroup) return;
+    
+    // Only scroll if we haven't scrolled to this group yet
+    if (hasScrolledRef.current[selectedGroup.id]) return;
+
+    // Mark as scrolled
+    hasScrolledRef.current[selectedGroup.id] = true;
+
+    // Small delay to ensure DOM is ready
+    setTimeout(() => {
+      if (messagesContainerRef.current) {
+        messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+      }
+    }, 50);
+  }, [selectedGroup]);
 
   // Send group message
   const handleSendMessage = async (e) => {
@@ -200,7 +217,10 @@ export default function GroupChat({ group, onBack }) {
         </div>
 
         {/* Messages */}
-        <div className={`flex-1 overflow-y-auto p-4 space-y-4 ${isDark ? "bg-gray-800" : "bg-white"}`}>
+        <div 
+          ref={messagesContainerRef}
+          className={`flex-1 overflow-y-auto p-4 space-y-4 ${isDark ? "bg-gray-800" : "bg-white"}`}
+        >
           {messages.length === 0 ? (
             <div
               className={`flex items-center justify-center h-full ${
@@ -285,7 +305,6 @@ export default function GroupChat({ group, onBack }) {
                   </div>
                 </div>
               ))}
-              <div ref={messagesEndRef} />
             </>
           )}
         </div>
@@ -362,7 +381,7 @@ export default function GroupChat({ group, onBack }) {
                 </div>
                 <div
                   className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 ${
-                    userStatuses[member.uid]?.status === "online"
+                    userStatuses[member.uid]?.isOnline
                       ? "bg-green-500 border-white"
                       : "bg-gray-400 border-white"
                   }`}
