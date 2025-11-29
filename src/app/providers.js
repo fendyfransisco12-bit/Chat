@@ -2,11 +2,14 @@
 
 import { AuthProvider } from "@/context/AuthContext";
 import { ThemeProvider } from "@/context/ThemeContext";
+import { NotificationProvider } from "@/context/NotificationContext";
 
 export function Providers({ children }) {
   return (
     <ThemeProvider>
-      <AuthProvider>{children}</AuthProvider>
+      <AuthProvider>
+        <NotificationProvider>{children}</NotificationProvider>
+      </AuthProvider>
     </ThemeProvider>
   );
 }

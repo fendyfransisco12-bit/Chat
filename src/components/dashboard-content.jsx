@@ -4,10 +4,16 @@ import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
+import { useNotification } from "@/context/NotificationContext";
 import { signOut } from "firebase/auth";
 import { auth, db, storage } from "@/lib/firebase";
 import { ref, onValue, push, remove } from "firebase/database";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import {
+  requestNotificationPermission,
+  sendNotification,
+  updateBrowserTitle,
+} from "@/lib/notifications";
 import FinancialTracker from "./financial-tracker";
 import PlanningDestination from "./planning-destination";
 import SwipeMenu from "./swipe-menu";
@@ -19,6 +25,7 @@ export default function DashboardContent() {
   const router = useRouter();
   const { user, loading } = useAuth();
   const { isDark, toggleTheme } = useTheme();
+  const notification = useNotification();
   const [users, setUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -37,13 +44,20 @@ export default function DashboardContent() {
   const [chatTab, setChatTab] = useState("personal"); // "personal" or "groups"
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const messageCountRef = useRef({}); // Track message counts per chat
 
-  // Debug: Log when selectedGroup changes
+  // Request notification permission and update browser title
   useEffect(() => {
-    console.log("selectedGroup changed:", selectedGroup);
-    console.log("activeTab:", activeTab);
-    console.log("Should show GroupChat?", activeTab === "messages" && selectedGroup);
-  }, [selectedGroup, activeTab]);
+    if (!user) return;
+    
+    requestNotificationPermission();
+  }, [user]);
+
+  // Update browser title with unread count
+  useEffect(() => {
+    const totalUnread = notification.getTotalUnread();
+    updateBrowserTitle(totalUnread, "Chat App");
+  }, [notification]);
 
   // Update user online status
   useEffect(() => {
@@ -88,7 +102,97 @@ export default function DashboardContent() {
     return unsubscribe;
   }, [user]);
 
-  // Fetch user online statuses
+  // Monitor unread messages from all chats
+  useEffect(() => {
+    if (!user || !db || !users.length) return;
+
+    const unsubscribers = users.map((otherUser) => {
+      const chatId = [user.uid, otherUser.uid].sort().join("_");
+      const messagesRef = ref(db, `messages/${chatId}`);
+
+      return onValue(messagesRef, (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.val();
+          const newMessageCount = Object.keys(data).length;
+          const oldMessageCount = messageCountRef.current[chatId] || 0;
+
+          // If new messages arrived and this chat is NOT selected
+          if (newMessageCount > oldMessageCount && selectedUser?.uid !== otherUser.uid) {
+            const newMessagesCount = newMessageCount - oldMessageCount;
+            
+            // Add unread notifications
+            for (let i = 0; i < newMessagesCount; i++) {
+              notification.addUnreadMessage(chatId);
+            }
+
+            // Send browser notification
+            const lastMessage = Object.entries(data)[Object.entries(data).length - 1];
+            if (lastMessage) {
+              const [, msgData] = lastMessage;
+              if (msgData.senderId !== user.uid) {
+                sendNotification(`New message from ${otherUser.username}`, {
+                  body: msgData.text?.substring(0, 50) || "📸 Image sent",
+                  tag: chatId,
+                });
+              }
+            }
+          }
+
+          messageCountRef.current[chatId] = newMessageCount;
+        }
+      });
+    });
+
+    return () => {
+      unsubscribers.forEach((unsub) => unsub?.());
+    };
+  }, [user, users, selectedUser, notification]);
+
+  // Monitor unread group messages
+  useEffect(() => {
+    if (!user || !db || !userGroups.length) return;
+
+    const unsubscribers = userGroups.map((group) => {
+      const messagesRef = ref(db, `groups/${group.id}/messages`);
+      let messageCountRef_group = 0;
+
+      return onValue(messagesRef, (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.val();
+          const newMessageCount = Object.keys(data).length;
+
+          // If new messages arrived and this group is NOT selected
+          if (newMessageCount > messageCountRef_group && selectedGroup?.id !== group.id) {
+            const newMessagesCount = newMessageCount - messageCountRef_group;
+            
+            // Add unread notifications
+            for (let i = 0; i < newMessagesCount; i++) {
+              notification.addUnreadGroup(group.id);
+            }
+
+            // Send browser notification
+            const lastMessage = Object.entries(data)[Object.entries(data).length - 1];
+            if (lastMessage) {
+              const [, msgData] = lastMessage;
+              if (msgData.senderId !== user.uid) {
+                sendNotification(`New message in ${group.name}`, {
+                  body: msgData.text?.substring(0, 50) || "📸 Image sent",
+                  tag: `group-${group.id}`,
+                });
+              }
+            }
+          }
+
+          messageCountRef_group = newMessageCount;
+        }
+      });
+    });
+
+    return () => {
+      unsubscribers.forEach((unsub) => unsub?.());
+    };
+  }, [user, userGroups, selectedGroup, notification, db]);
+
   useEffect(() => {
     if (!db) return;
 
@@ -179,14 +283,20 @@ export default function DashboardContent() {
             ...messageData 
           }))
           .sort((a, b) => a.timestamp - b.timestamp);
+        
+        // Clear unread when viewing this chat
+        notification.clearUnreadMessages(chatId);
+        messageCountRef.current[chatId] = messagesList.length;
+        
         setMessages(messagesList);
       } else {
         setMessages([]);
+        messageCountRef.current[chatId] = 0;
       }
     });
 
     return unsubscribe;
-  }, [selectedUser, user]);
+  }, [selectedUser, user, notification]);
 
   // Auto-scroll to latest message
   useEffect(() => {
@@ -560,6 +670,13 @@ export default function DashboardContent() {
                                 {userStatuses[u.uid]?.status === "online" ? "🟢 Online" : "🔴 Offline"}
                               </p>
                             </div>
+                            {notification.unreadMessages[[user.uid, u.uid].sort().join("_")] > 0 && (
+                              <div className="flex items-center justify-center w-6 h-6 bg-red-500 text-white rounded-full text-xs font-bold flex-shrink-0">
+                                {notification.unreadMessages[[user.uid, u.uid].sort().join("_")] > 9
+                                  ? "9+"
+                                  : notification.unreadMessages[[user.uid, u.uid].sort().join("_")]}
+                              </div>
+                            )}
                           </button>
                         ))
                       )
@@ -598,6 +715,11 @@ export default function DashboardContent() {
                                 {group.type === "public" ? "🌍 Public" : "🔒 Private"}
                               </p>
                             </div>
+                            {notification.unreadGroups[group.id] > 0 && (
+                              <div className="flex items-center justify-center w-6 h-6 bg-red-500 text-white rounded-full text-xs font-bold flex-shrink-0">
+                                {notification.unreadGroups[group.id] > 9 ? "9+" : notification.unreadGroups[group.id]}
+                              </div>
+                            )}
                           </button>
                         ))
                       )

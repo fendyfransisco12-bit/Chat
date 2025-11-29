@@ -3,18 +3,22 @@
 import { useEffect, useState, useRef } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
+import { useNotification } from "@/context/NotificationContext";
 import { db } from "@/lib/firebase";
 import { ref, onValue, push, remove, update } from "firebase/database";
+import { sendNotification } from "@/lib/notifications";
 
 export default function GroupChat({ group, onBack }) {
   const { user } = useAuth();
   const { isDark } = useTheme();
+  const notification = useNotification();
   const [messages, setMessages] = useState([]);
   const [messageText, setMessageText] = useState("");
   const [members, setMembers] = useState([]);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [userStatuses, setUserStatuses] = useState({});
   const messagesEndRef = useRef(null);
+  const messageCountRef = useRef(0);
 
   // Debug logging
   useEffect(() => {
@@ -35,14 +39,20 @@ export default function GroupChat({ group, onBack }) {
             ...messageData,
           }))
           .sort((a, b) => a.timestamp - b.timestamp);
+        
+        // Clear unread for this group when viewing it
+        notification.clearUnreadGroup(group.id);
+        messageCountRef.current = messagesList.length;
+        
         setMessages(messagesList);
       } else {
         setMessages([]);
+        messageCountRef.current = 0;
       }
     });
 
     return unsubscribe;
-  }, [group]);
+  }, [group, notification]);
 
   // Fetch group members
   useEffect(() => {
