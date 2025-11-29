@@ -50,6 +50,8 @@ export default function DashboardContent() {
   const groupMessageCountRef = useRef({});
   const hasScrolledRef = useRef({});
   const previousMessageCountRef = useRef({});
+  const lastMessageTimeRef = useRef({});
+  const lastGroupMessageTimeRef = useRef({});
 
   // Request notification permission and update browser title
   useEffect(() => {
@@ -116,29 +118,45 @@ export default function DashboardContent() {
       return onValue(messagesRef, (snapshot) => {
         if (snapshot.exists()) {
           const data = snapshot.val();
-          const newMessageCount = Object.keys(data).length;
-          const oldMessageCount = messageCountRef.current[chatId] || 0;
-        
-          // Hanya trigger jika ada message baru
-          if (newMessageCount > oldMessageCount) {
-            const lastMessage = Object.entries(data)[Object.entries(data).length - 1];
-            if (lastMessage) {
-              const [, msgData] = lastMessage;
-              // Jika message dari orang lain dan user TIDAK sedang membaca chat ini
-              if (msgData.senderId !== user.uid && selectedUser?.uid !== otherUser.uid) {
-                // Trigger badge notification (hanya 1x)
+          const messagesList = Object.entries(data).map(([id, msg]) => ({ id, ...msg }));
+          const lastMessage = messagesList[messagesList.length - 1];
+          
+          // Jika user sedang membuka chat ini, clear unread
+          if (selectedUser?.uid === otherUser.uid) {
+            notification.clearUnreadMessages(chatId);
+          } else if (lastMessage) {
+            // Hanya cek pesan baru jika user TIDAK sedang membuka chat ini
+            const lastMessageTime = lastMessage.timestamp;
+            const readAtTime = notification.readChats[chatId]?.readAt || 0;
+            
+            // Ada pesan baru yang belum dibaca jika:
+            // 1. Message dari orang lain
+            // 2. Waktu message lebih baru dari readAt (ini adalah pesan BARU setelah dibaca)
+            if (
+              lastMessage.senderId !== user.uid &&
+              lastMessageTime > readAtTime
+            ) {
+              // Cek di unreadMessages untuk avoid trigger multiple times
+              if (!notification.unreadMessages[chatId]) {
+                // Trigger badge notification
                 notification.addUnreadMessage(chatId);
                 
-                // Trigger browser notification (hanya 1x)
+                // Trigger browser notification
                 sendNotification(`New message from ${otherUser.username}`, {
-                  body: msgData.text?.substring(0, 50) || "📸 Image sent",
+                  body: lastMessage.text?.substring(0, 50) || "📸 Image sent",
                   tag: chatId,
                 });
               }
+            } else if (
+              lastMessage.senderId !== user.uid &&
+              lastMessageTime <= readAtTime
+            ) {
+              // Jika sudah dibaca berdasarkan timestamp, clear unread
+              notification.clearUnreadMessages(chatId);
             }
           }
 
-          messageCountRef.current[chatId] = newMessageCount;
+          messageCountRef.current[chatId] = messagesList.length;
         }
       });
     });
@@ -146,7 +164,7 @@ export default function DashboardContent() {
     return () => {
       unsubscribers.forEach((unsub) => unsub?.());
     };
-  }, [user, users, selectedUser, notification]);
+  }, [user, users, selectedUser?.uid, notification]);
 
   // Monitor unread group messages
   useEffect(() => {
@@ -158,31 +176,45 @@ export default function DashboardContent() {
       return onValue(messagesRef, (snapshot) => {
         if (snapshot.exists()) {
           const data = snapshot.val();
-          const newMessageCount = Object.keys(data).length;
-          const oldMessageCount = groupMessageCountRef.current[group.id] || 0;
+          const messagesList = Object.entries(data).map(([id, msg]) => ({ id, ...msg }));
+          const lastMessage = messagesList[messagesList.length - 1];
 
           // Jika user sedang membuka grup ini, clear unread
           if (selectedGroup?.id === group.id) {
             notification.clearUnreadGroup(group.id);
-          } else if (newMessageCount > oldMessageCount) {
-            // Hanya trigger jika ada message baru dan user TIDAK sedang membaca grup ini
-            const lastMessage = Object.entries(data)[Object.entries(data).length - 1];
-            if (lastMessage) {
-              const [, msgData] = lastMessage;
-              if (msgData.senderId !== user.uid) {
-                // Trigger badge notification (hanya 1x)
+          } else if (lastMessage) {
+            // Hanya cek pesan baru jika user TIDAK sedang membuka grup ini
+            const lastMessageTime = lastMessage.timestamp;
+            const readAtTime = notification.readGroups[group.id]?.readAt || 0;
+            
+            // Ada pesan baru yang belum dibaca jika:
+            // 1. Message dari orang lain
+            // 2. Waktu message lebih baru dari readAt (ini adalah pesan BARU setelah dibaca)
+            if (
+              lastMessage.senderId !== user.uid &&
+              lastMessageTime > readAtTime
+            ) {
+              // Cek di unreadGroups untuk avoid trigger multiple times
+              if (!notification.unreadGroups[group.id]) {
+                // Trigger badge notification
                 notification.addUnreadGroup(group.id);
                 
-                // Trigger browser notification (hanya 1x)
+                // Trigger browser notification
                 sendNotification(`New message in ${group.name}`, {
-                  body: msgData.text?.substring(0, 50) || "📸 Image sent",
+                  body: lastMessage.text?.substring(0, 50) || "📸 Image sent",
                   tag: `group-${group.id}`,
                 });
               }
+            } else if (
+              lastMessage.senderId !== user.uid &&
+              lastMessageTime <= readAtTime
+            ) {
+              // Jika sudah dibaca berdasarkan timestamp, clear unread
+              notification.clearUnreadGroup(group.id);
             }
           }
 
-          groupMessageCountRef.current[group.id] = newMessageCount;
+          groupMessageCountRef.current[group.id] = messagesList.length;
         }
       });
     });
@@ -190,7 +222,7 @@ export default function DashboardContent() {
     return () => {
       unsubscribers.forEach((unsub) => unsub?.());
     };
-  }, [user, userGroups, selectedGroup, notification, db]);
+  }, [user, userGroups, selectedGroup?.id, notification, db]);
 
   // Fetch user online statuses
   useEffect(() => {
