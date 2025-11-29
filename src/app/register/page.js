@@ -71,8 +71,8 @@ export default function RegisterPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 21a7.5 7.5 0 0115 0" />
             </svg>
           </div>
-          <h1 className="text-2xl font-semibold text-gray-900">Create Account</h1>
-          <p className="text-sm text-gray-700 mt-1">Join us today</p>
+          <h1 className="text-2xl font-semibold text-gray-900">Buat Akun Anda</h1>
+          <p className="text-sm text-gray-700 mt-1">Jangan Rusuh Ya!!</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -207,7 +207,7 @@ export default function RegisterPage() {
         </form>
 
         <div className="mt-5 text-center text-sm text-gray-700">
-          Already have an account? <Link href="/login" className="text-indigo-600 hover:underline">Sign in</Link>
+          Sudah Punya Akun? Ya Login!👉 <Link href="/login" className="text-indigo-600 hover:underline">Sign in</Link>
         </div>
       </div>
     </div>

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 import { db } from "@/lib/firebase";
-import { ref, onValue, push, remove } from "firebase/database";
+import { ref, onValue, push, remove, set } from "firebase/database";
 
 export default function PlanningDestination() {
   const { user } = useAuth();
@@ -18,6 +18,7 @@ export default function PlanningDestination() {
     budget: "",
   });
   const [editingId, setEditingId] = useState(null);
+  const [selectedDestination, setSelectedDestination] = useState(null);
 
   // Fetch destinations
   useEffect(() => {
@@ -39,6 +40,21 @@ export default function PlanningDestination() {
     return unsubscribe;
   }, [user]);
 
+  // Format budget input dengan separator ribuan
+  const formatBudget = (value) => {
+    // Remove non-numeric characters
+    const numericValue = value.replace(/\D/g, "");
+    // Format dengan separator ribuan
+    if (!numericValue) return "";
+    return numericValue.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  };
+
+  const handleBudgetChange = (e) => {
+    const inputValue = e.target.value;
+    const formatted = formatBudget(inputValue);
+    setNewDestination({ ...newDestination, budget: inputValue.replace(/\D/g, "") }); // Store raw number
+  };
+
   // Add or update destination
   const handleSaveDestination = async (e) => {
     e.preventDefault();
@@ -50,9 +66,9 @@ export default function PlanningDestination() {
 
     try {
       if (editingId) {
-        // Update existing
+        // Update existing - gunakan set() bukan push()
         const destRef = ref(db, `users/${user.uid}/destinations/${editingId}`);
-        await push(destRef, {
+        await set(destRef, {
           ...newDestination,
           updatedAt: Date.now(),
         });
@@ -101,7 +117,7 @@ export default function PlanningDestination() {
         {/* Header */}
         <div className="mb-8">
           <h1 className={`text-4xl font-bold mb-2 ${isDark ? "text-white" : "text-gray-900"}`}>
-            ✈️ Travel Planning
+            Planning New Journey
           </h1>
           <p className={`text-lg ${isDark ? "text-gray-400" : "text-gray-600"}`}>
             Plan your next amazing destination
@@ -145,10 +161,10 @@ export default function PlanningDestination() {
 
               {/* Budget */}
               <input
-                type="number"
+                type="text"
                 placeholder="Budget (Rp)"
-                value={newDestination.budget}
-                onChange={(e) => setNewDestination({ ...newDestination, budget: e.target.value })}
+                value={formatBudget(newDestination.budget)}
+                onChange={handleBudgetChange}
                 className={`px-4 py-2 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 transition-all ${
                   isDark
                     ? "bg-gray-600 text-white placeholder-gray-400"
@@ -293,6 +309,12 @@ export default function PlanningDestination() {
                   {/* Actions */}
                   <div className="flex gap-2">
                     <button
+                      onClick={() => setSelectedDestination(dest)}
+                      className="flex-1 bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-3 rounded-lg transition-colors duration-200 text-sm"
+                    >
+                      View
+                    </button>
+                    <button
                       onClick={() => {
                         setEditingId(dest.id);
                         setNewDestination(dest);
@@ -314,6 +336,130 @@ export default function PlanningDestination() {
           </div>
         )}
       </div>
+
+      {/* Detail View Modal */}
+      {selectedDestination && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className={`rounded-lg shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto ${
+            isDark ? "bg-gray-800" : "bg-white"
+          }`}>
+            {/* Close Button */}
+            <div className="sticky top-0 flex justify-end p-4 bg-opacity-95">
+              <button
+                onClick={() => setSelectedDestination(null)}
+                className={`p-2 rounded-lg transition-colors ${
+                  isDark ? "hover:bg-gray-700 text-gray-400" : "hover:bg-gray-100 text-gray-600"
+                }`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="px-6 pb-6">
+              {/* Image */}
+              <div className="rounded-lg overflow-hidden mb-6">
+                <img
+                  src={selectedDestination.imageUrl}
+                  alt={selectedDestination.name}
+                  className="w-full h-80 object-cover"
+                  onError={(e) => {
+                    e.target.src = "https://via.placeholder.com/600x400?text=Image+Not+Found";
+                  }}
+                />
+              </div>
+
+              {/* Title */}
+              <h1 className={`text-3xl font-bold mb-2 ${isDark ? "text-white" : "text-gray-900"}`}>
+                {selectedDestination.name}
+              </h1>
+
+              {/* Status */}
+              {selectedDestination.status && (
+                <div className="mb-4">
+                  <span className="bg-blue-500 text-white px-4 py-1 rounded-full text-sm font-semibold">
+                    {selectedDestination.status}
+                  </span>
+                </div>
+              )}
+
+              {/* Date and Budget */}
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                {selectedDestination.estimatedDate && (
+                  <div className={`p-4 rounded-lg ${isDark ? "bg-gray-700" : "bg-gray-100"}`}>
+                    <p className={`text-sm ${isDark ? "text-gray-400" : "text-gray-600"}`}>Estimated Date</p>
+                    <p className={`text-lg font-semibold ${isDark ? "text-white" : "text-gray-900"}`}>
+                      📅 {new Date(selectedDestination.estimatedDate).toLocaleDateString("id-ID", {
+                        weekday: "long",
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric"
+                      })}
+                    </p>
+                  </div>
+                )}
+                {selectedDestination.budget && (
+                  <div className={`p-4 rounded-lg ${isDark ? "bg-gray-700" : "bg-gray-100"}`}>
+                    <p className={`text-sm ${isDark ? "text-gray-400" : "text-gray-600"}`}>Budget</p>
+                    <p className="text-lg font-semibold text-green-500">
+                      💰 Rp {parseInt(selectedDestination.budget).toLocaleString("id-ID")}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Description */}
+              {selectedDestination.description && (
+                <div className="mb-6">
+                  <h2 className={`text-xl font-bold mb-2 ${isDark ? "text-white" : "text-gray-900"}`}>
+                    Description
+                  </h2>
+                  <p className={`leading-relaxed whitespace-pre-wrap ${
+                    isDark ? "text-gray-300" : "text-gray-700"
+                  }`}>
+                    {selectedDestination.description}
+                  </p>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setEditingId(selectedDestination.id);
+                    setNewDestination(selectedDestination);
+                    setSelectedDestination(null);
+                  }}
+                  className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-200"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => {
+                    handleDeleteDestination(selectedDestination.id);
+                    setSelectedDestination(null);
+                  }}
+                  className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-200"
+                >
+                  Delete
+                </button>
+                <button
+                  onClick={() => setSelectedDestination(null)}
+                  className={`flex-1 font-bold py-2 px-4 rounded-lg transition-colors duration-200 ${
+                    isDark
+                      ? "bg-gray-700 hover:bg-gray-600 text-white"
+                      : "bg-gray-200 hover:bg-gray-300 text-gray-900"
+                  }`}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

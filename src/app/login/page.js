@@ -41,8 +41,8 @@ export default function LoginPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 21a7.5 7.5 0 0115 0" />
             </svg>
           </div>
-          <h1 className="text-2xl font-semibold text-gray-900">Selamat Datang</h1>
-          <p className="text-sm text-gray-700 mt-1">Silahkan login terlebih dahulu</p>
+          <h1 className="text-2xl font-semibold text-gray-900">DashBoard Cungkok</h1>
+          <p className="text-sm text-gray-700 mt-1">Login dulu ya!</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -115,7 +115,7 @@ export default function LoginPage() {
               <input type="checkbox" className="h-4 w-4 rounded text-indigo-600 border-gray-300" />
               <span className="ml-2">Remember me</span>
             </label>
-            <button type="button" className="text-sm text-indigo-600 hover:underline">Forgot?</button>
+            <button type="button" className="text-sm text-indigo-600 hover:underline"></button>
           </div>
 
           <button
@@ -128,7 +128,7 @@ export default function LoginPage() {
         </form>
 
         <div className="mt-5 text-center text-sm text-gray-700">
-          Don't have an account? <Link href="/register" className="text-indigo-600 hover:underline">Sign up</Link>
+          Tidak punya akun? Ya bikin lah👉 <Link href="/register" className="text-indigo-600 hover:underline">Sign up</Link>
         </div>
       </div>
     </div>
